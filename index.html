@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlareScan — PE Static Analyzer</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow:wght@300;400;500;600;700&family=Barlow+Condensed:wght@400;600;700;800&display=swap');
+
+:root {
+  --bg:       #080b0f;
+  --bg2:      #0d1117;
+  --bg3:      #111820;
+  --border:   #1e2d3d;
+  --border2:  #243347;
+  --accent:   #ff4b2b;
+  --accent2:  #ff6b35;
+  --safe:     #00e5a0;
+  --warn:     #f0c030;
+  --info:     #3d9eff;
+  --text:     #c9d8e8;
+  --text2:    #6b8399;
+  --text3:    #3d5166;
+  --mono:     'Share Tech Mono', monospace;
+  --sans:     'Barlow', sans-serif;
+  --cond:     'Barlow Condensed', sans-serif;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--bg); color:var(--text); font-family:var(--sans); min-height:100vh; overflow-x:hidden; }
+body::before {
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background-image: linear-gradient(rgba(61,158,255,.025) 1px,transparent 1px), linear-gradient(90deg,rgba(61,158,255,.025) 1px,transparent 1px);
+  background-size:40px 40px;
+}
+body::after {
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:999;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.12) 2px,rgba(0,0,0,.12) 4px);
+  opacity:.35;
+}
+
+/* ── HEADER ── */
+header {
+  position:relative; z-index:10;
+  display:flex; align-items:center; justify-content:space-between;
+  padding:16px 28px; border-bottom:1px solid var(--border);
+  background:rgba(8,11,15,.97); backdrop-filter:blur(10px);
+}
+.logo { display:flex; align-items:center; gap:10px; }
+.logo svg { width:32px; height:32px; }
+.logo-text { font-family:var(--cond); font-weight:800; font-size:20px; letter-spacing:.08em; color:#fff; }
+.logo-text span { color:var(--accent); }
+.header-right { display:flex; gap:8px; align-items:center; }
+.tag { font-family:var(--mono); font-size:10px; padding:3px 8px; border:1px solid var(--border2); color:var(--text2); letter-spacing:.1em; }
+.tag.on { border-color:var(--safe); color:var(--safe); }
+
+/* ── MAIN ── */
+main { position:relative; z-index:5; max-width:1360px; margin:0 auto; padding:28px 24px; }
+
+/* ── SCREEN HELPERS ── */
+.screen { display:none; }
+.screen.active { display:flex; }
+
+/* ── UPLOAD ── */
+#screen-upload { flex-direction:column; align-items:center; justify-content:center; min-height:calc(100vh - 65px); gap:36px; }
+.upload-headline { text-align:center; }
+.upload-headline h1 { font-family:var(--cond); font-size:48px; font-weight:800; letter-spacing:.04em; line-height:1; color:#fff; margin-bottom:10px; }
+.upload-headline h1 em { font-style:normal; color:var(--accent); }
+.upload-headline p { color:var(--text2); font-size:14px; font-weight:300; }
+.drop-zone {
+  width:520px; max-width:100%; border:1px dashed var(--border2);
+  background:var(--bg2); padding:48px 32px; text-align:center; cursor:pointer;
+  transition:all .2s; position:relative; overflow:hidden;
+}
+.drop-zone::before { content:''; position:absolute; inset:0; background:linear-gradient(135deg,rgba(255,75,43,.04),transparent 60%); pointer-events:none; }
+.drop-zone:hover, .drop-zone.drag-over { border-color:var(--accent); background:rgba(255,75,43,.04); }
+.drop-icon { font-size:44px; margin-bottom:14px; display:block; }
+.drop-zone h2 { font-family:var(--cond); font-size:18px; font-weight:700; letter-spacing:.06em; color:#fff; margin-bottom:6px; }
+.drop-zone p { color:var(--text2); font-size:12px; margin-bottom:20px; }
+input[type=file] { display:none; }
+.btn-primary {
+  display:inline-flex; align-items:center; gap:8px; background:var(--accent); color:#fff;
+  font-family:var(--cond); font-size:13px; font-weight:700; letter-spacing:.12em;
+  padding:11px 26px; border:none; cursor:pointer; text-transform:uppercase; transition:all .15s;
+  clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,8px 100%,0 calc(100% - 8px));
+}
+.btn-primary:hover { background:var(--accent2); transform:translateY(-1px); }
+.formats { font-family:var(--mono); font-size:10px; color:var(--text3); letter-spacing:.08em; }
+
+/* ── SCANNING ── */
+#screen-scanning { flex-direction:column; align-items:center; justify-content:center; min-height:calc(100vh - 65px); gap:28px; }
+.scan-status { text-align:center; }
+.scan-status h2 { font-family:var(--cond); font-size:26px; font-weight:800; letter-spacing:.06em; color:#fff; margin-bottom:6px; }
+.scan-status p { font-family:var(--mono); font-size:11px; color:var(--info); letter-spacing:.08em; }
+.scan-log-wrap { width:680px; max-width:100%; border:1px solid var(--border); background:var(--bg2); overflow:hidden; }
+.scan-log-bar { background:var(--bg3); border-bottom:1px solid var(--border); padding:7px 12px; display:flex; align-items:center; gap:8px; }
+.win-dots { display:flex; gap:5px; }
+.win-dot { width:9px; height:9px; border-radius:50%; }
+.win-dot.r{background:#ff4b2b} .win-dot.y{background:#f0c030} .win-dot.g{background:#00e5a0}
+.scan-log-title { font-family:var(--mono); font-size:10px; color:var(--text2); flex:1; text-align:center; }
+.scan-log { background:#000c18; padding:16px; height:220px; overflow-y:auto; }
+.log-line { font-family:var(--mono); font-size:11px; line-height:1.8; opacity:0; animation:fadeIn .3s forwards; }
+.log-line.ok   { color:var(--safe); }
+.log-line.info { color:var(--info); }
+.log-line.warn { color:var(--warn); }
+.log-line.dim  { color:var(--text3); }
+.log-cursor { display:inline-block; width:7px; height:13px; background:var(--safe); vertical-align:middle; animation:blink 1s infinite; }
+@keyframes fadeIn { to{opacity:1} }
+@keyframes blink { 0%,50%{opacity:1} 51%,100%{opacity:0} }
+.scan-progress { width:680px; max-width:100%; }
+.prog-label { display:flex; justify-content:space-between; font-family:var(--mono); font-size:10px; color:var(--text2); margin-bottom:6px; letter-spacing:.06em; }
+.prog-track { height:2px; background:var(--bg3); overflow:hidden; }
+.prog-fill { height:100%; background:linear-gradient(90deg,var(--info),var(--accent)); transition:width .5s ease; box-shadow:0 0 8px rgba(61,158,255,.5); }
+
+/* ── RESULTS ── */
+#screen-results { flex-direction:column; gap:20px; padding-bottom:56px; }
+
+.res-header { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; flex-wrap:wrap; }
+.res-file h2 { font-family:var(--cond); font-size:24px; font-weight:800; letter-spacing:.04em; color:#fff; margin-bottom:6px; word-break:break-all; }
+.res-meta { display:flex; gap:12px; flex-wrap:wrap; }
+.meta { font-family:var(--mono); font-size:10px; color:var(--text2); letter-spacing:.05em; }
+.meta span { color:var(--text); }
+
+.score-wrap { display:flex; flex-direction:column; align-items:center; gap:6px; flex-shrink:0; }
+.score-ring { position:relative; width:100px; height:100px; }
+.score-ring svg { transform:rotate(-90deg); }
+.score-inner { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.score-num { font-family:var(--cond); font-size:30px; font-weight:800; line-height:1; }
+.score-sub { font-family:var(--mono); font-size:8px; color:var(--text2); letter-spacing:.1em; }
+.verdict { font-family:var(--cond); font-size:12px; font-weight:700; letter-spacing:.14em; padding:3px 10px; text-transform:uppercase; }
+.verdict.malicious  { background:rgba(255,75,43,.15); color:var(--accent); border:1px solid rgba(255,75,43,.3); }
+.verdict.suspicious { background:rgba(240,192,48,.12); color:var(--warn); border:1px solid rgba(240,192,48,.3); }
+.verdict.clean      { background:rgba(0,229,160,.1); color:var(--safe); border:1px solid rgba(0,229,160,.25); }
+
+.summary-bar {
+  background:var(--bg2); border:1px solid var(--border);
+  padding:18px 22px; display:flex; gap:28px; flex-wrap:wrap; align-items:center;
+}
+.summary-score { font-family:var(--cond); font-size:64px; font-weight:800; line-height:1; }
+.summary-score.malicious  { color:var(--accent); text-shadow:0 0 40px rgba(255,75,43,.35); }
+.summary-score.suspicious { color:var(--warn); text-shadow:0 0 40px rgba(240,192,48,.3); }
+.summary-score.clean      { color:var(--safe); text-shadow:0 0 40px rgba(0,229,160,.3); }
+.summary-stats { flex:1; min-width:180px; }
+.summary-stats h3 { font-family:var(--cond); font-size:14px; font-weight:700; letter-spacing:.06em; color:#fff; margin-bottom:12px; }
+.ind-rows { display:flex; flex-direction:column; gap:7px; }
+.ind-row { display:flex; align-items:center; gap:10px; font-size:12px; }
+.ind-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+.ind-label { flex:1; color:var(--text); }
+.ind-val { font-family:var(--mono); font-size:11px; color:var(--text2); }
+
+/* ── GRID ── */
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.grid1 { display:grid; grid-template-columns:1fr; gap:16px; }
+@media(max-width:800px){ .grid2{ grid-template-columns:1fr; } main{ padding:14px; } }
+
+.panel { background:var(--bg2); border:1px solid var(--border); overflow:hidden; }
+.panel-hd { padding:10px 16px; border-bottom:1px solid var(--border); background:var(--bg3); display:flex; align-items:center; justify-content:space-between; }
+.panel-title { font-family:var(--cond); font-size:12px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--text); }
+.panel-ct { font-family:var(--mono); font-size:10px; color:var(--text2); }
+.panel-body { padding:14px 16px; }
+
+/* Events */
+.ev-list { display:flex; flex-direction:column; gap:7px; max-height:480px; overflow-y:auto; }
+.ev-item { display:flex; align-items:flex-start; gap:10px; padding:9px 10px; border-left:2px solid transparent; background:rgba(255,255,255,.02); }
+.ev-item:hover { background:rgba(255,255,255,.04); }
+.ev-item.critical { border-left-color:var(--accent); }
+.ev-item.high     { border-left-color:var(--warn); }
+.ev-item.medium   { border-left-color:var(--info); }
+.ev-item.low      { border-left-color:var(--text3); }
+.ev-sev { font-family:var(--mono); font-size:8px; letter-spacing:.06em; padding:2px 4px; flex-shrink:0; margin-top:1px; text-transform:uppercase; }
+.sc { background:rgba(255,75,43,.18); color:var(--accent); }
+.sh { background:rgba(240,192,48,.14); color:var(--warn); }
+.sm { background:rgba(61,158,255,.14); color:var(--info); }
+.sl { background:rgba(255,255,255,.05); color:var(--text2); }
+.ev-body { flex:1; min-width:0; }
+.ev-name { font-size:12px; font-weight:500; color:#dde8f2; margin-bottom:2px; }
+.ev-note { font-family:var(--mono); font-size:10px; color:var(--text2); line-height:1.4; }
+.ev-str  { font-family:var(--mono); font-size:9px; color:var(--text3); margin-top:3px; word-break:break-all; }
+
+/* Cat bars */
+.cat-rows { display:flex; flex-direction:column; gap:11px; }
+.cat-row { display:flex; flex-direction:column; gap:4px; }
+.cat-hd { display:flex; justify-content:space-between; }
+.cat-name { font-size:11px; color:var(--text); font-weight:500; }
+.cat-n { font-family:var(--mono); font-size:10px; color:var(--text2); }
+.cat-track { height:3px; background:var(--bg3); border-radius:2px; overflow:hidden; }
+.cat-fill { height:100%; border-radius:2px; transition:width 1s cubic-bezier(.4,0,.2,1); width:0; }
+
+/* PE info */
+.pe-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.pe-row { display:flex; flex-direction:column; gap:2px; padding:8px; background:rgba(255,255,255,.02); }
+.pe-label { font-family:var(--mono); font-size:9px; color:var(--text3); letter-spacing:.08em; text-transform:uppercase; }
+.pe-val { font-family:var(--mono); font-size:11px; color:var(--text); }
+
+/* Sections table */
+.sec-table { width:100%; border-collapse:collapse; }
+.sec-table th { font-family:var(--mono); font-size:9px; color:var(--text3); text-align:left; padding:0 8px 8px; text-transform:uppercase; border-bottom:1px solid var(--border); letter-spacing:.06em; }
+.sec-table td { font-family:var(--mono); font-size:10px; color:var(--text2); padding:7px 8px; border-bottom:1px solid rgba(30,45,61,.4); vertical-align:middle; }
+.sec-table td:first-child { color:var(--text); }
+.sec-suspicious { color:var(--accent) !important; }
+.entropy-bar { display:flex; align-items:center; gap:6px; }
+.entropy-track { width:60px; height:3px; background:var(--bg3); border-radius:2px; overflow:hidden; }
+.entropy-fill { height:100%; border-radius:2px; }
+
+/* Imports */
+.imp-list { display:flex; flex-direction:column; gap:8px; max-height:300px; overflow-y:auto; }
+.imp-dll { }
+.imp-dll-name { font-family:var(--mono); font-size:10px; color:var(--info); margin-bottom:4px; }
+.imp-fns { display:flex; flex-wrap:wrap; gap:4px; }
+.imp-fn {
+  font-family:var(--mono); font-size:9px; padding:2px 6px;
+  background:rgba(255,255,255,.04); color:var(--text2); border:1px solid var(--border);
+}
+.imp-fn.suspicious { background:rgba(255,75,43,.1); color:var(--accent); border-color:rgba(255,75,43,.25); }
+
+/* Strings panel */
+.str-search { width:100%; background:var(--bg3); border:1px solid var(--border); color:var(--text); font-family:var(--mono); font-size:11px; padding:7px 10px; margin-bottom:10px; outline:none; }
+.str-search:focus { border-color:var(--info); }
+.str-list { max-height:260px; overflow-y:auto; display:flex; flex-direction:column; gap:2px; }
+.str-row { font-family:var(--mono); font-size:10px; color:var(--text2); padding:3px 6px; word-break:break-all; }
+.str-row:hover { background:rgba(255,255,255,.03); }
+.str-row mark { background:rgba(240,192,48,.25); color:var(--warn); }
+
+/* rescan */
+.rescan { display:flex; justify-content:center; padding-top:8px; }
+.btn-ghost { background:transparent; color:var(--text2); border:1px solid var(--border2); font-family:var(--cond); font-size:12px; font-weight:700; letter-spacing:.1em; padding:9px 24px; cursor:pointer; text-transform:uppercase; transition:all .15s; }
+.btn-ghost:hover { border-color:var(--text2); color:var(--text); }
+
+/* scrollbar */
+::-webkit-scrollbar { width:4px; height:4px; }
+::-webkit-scrollbar-track { background:var(--bg3); }
+::-webkit-scrollbar-thumb { background:var(--border2); border-radius:2px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">
+    <svg viewBox="0 0 32 32" fill="none">
+      <polygon points="16,2 30,9 30,23 16,30 2,23 2,9" stroke="#ff4b2b" stroke-width="1.5" fill="none"/>
+      <polygon points="16,7 25,11.5 25,20.5 16,25 7,20.5 7,11.5" stroke="#ff4b2b" stroke-width=".7" fill="none" opacity=".35"/>
+      <path d="M11 16 L14 13 L16 18 L19 11 L21 16" stroke="#ff4b2b" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div class="logo-text">FLARE<span>SCAN</span></div>
+  </div>
+  <div class="header-right">
+    <div class="tag">STATIC ANALYSIS</div>
+    <div class="tag">PE PARSER</div>
+    <div class="tag on">● READY</div>
+  </div>
+</header>
+
+<main>
+
+<!-- UPLOAD -->
+<div id="screen-upload" class="screen active">
+  <div class="upload-headline">
+    <h1>PE <em>STATIC</em> ANALYZER</h1>
+    <p>Upload an EXE or DLL. We parse the PE structure, extract strings, and flag suspicious behaviors.</p>
+  </div>
+  <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+    <span class="drop-icon">🔬</span>
+    <h2>DROP FILE TO ANALYZE</h2>
+    <p>Drag and drop or click to select</p>
+    <button class="btn-primary" onclick="event.stopPropagation();document.getElementById('fileInput').click()">SELECT FILE</button>
+    <input type="file" id="fileInput" accept=".exe,.dll,.msi,.scr,.bat,.com">
+  </div>
+  <div class="formats">SUPPORTED: EXE · DLL · MSI · SCR · BAT · COM — MAX 50 MB</div>
+  <div id="uploadError" style="font-family:var(--mono);font-size:11px;color:var(--accent);display:none;"></div>
+</div>
+
+<!-- SCANNING -->
+<div id="screen-scanning" class="screen">
+  <div class="scan-status">
+    <h2>ANALYZING FILE</h2>
+    <p id="scanStage">PARSING PE HEADERS...</p>
+  </div>
+  <div class="scan-log-wrap">
+    <div class="scan-log-bar">
+      <div class="win-dots"><div class="win-dot r"></div><div class="win-dot y"></div><div class="win-dot g"></div></div>
+      <div class="scan-log-title" id="scanTitle">FlareScan Static Analysis Engine</div>
+    </div>
+    <div class="scan-log" id="scanLog"><span class="log-cursor"></span></div>
+  </div>
+  <div class="scan-progress">
+    <div class="prog-label"><span>PROGRESS</span><span id="progPct">0%</span></div>
+    <div class="prog-track"><div class="prog-fill" id="progFill" style="width:0%"></div></div>
+  </div>
+</div>
+
+<!-- RESULTS -->
+<div id="screen-results" class="screen">
+
+  <div class="res-header">
+    <div class="res-file">
+      <h2 id="resName">—</h2>
+      <div class="res-meta">
+        <div class="meta">SIZE: <span id="resSize">—</span></div>
+        <div class="meta">ARCH: <span id="resArch">—</span></div>
+        <div class="meta">SHA256: <span id="resSha" style="font-size:9px">—</span></div>
+        <div class="meta">MD5: <span id="resMd5" style="font-size:9px">—</span></div>
+        <div class="meta">COMPILED: <span id="resCompiled">—</span></div>
+      </div>
+    </div>
+    <div class="score-wrap">
+      <div class="score-ring">
+        <svg width="100" height="100" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="42" stroke="#1e2d3d" stroke-width="5" fill="none"/>
+          <circle cx="50" cy="50" r="42" stroke="#ff4b2b" stroke-width="5" fill="none"
+            stroke-dasharray="264" stroke-dashoffset="264" id="scoreArc" stroke-linecap="round"/>
+        </svg>
+        <div class="score-inner">
+          <div class="score-num" id="scoreNum">0</div>
+          <div class="score-sub">/100</div>
+        </div>
+      </div>
+      <div class="verdict" id="verdictBadge">—</div>
+    </div>
+  </div>
+
+  <!-- SUMMARY -->
+  <div class="summary-bar">
+    <div class="summary-score" id="scoreBig">0</div>
+    <div class="summary-stats">
+      <h3>CATEGORY BREAKDOWN</h3>
+      <div class="ind-rows" id="indRows"></div>
+    </div>
+  </div>
+
+  <!-- FINDINGS + CAT BARS -->
+  <div class="grid2">
+    <div class="panel">
+      <div class="panel-hd">
+        <div class="panel-title">⚠ Findings</div>
+        <div class="panel-ct" id="findingCt">0</div>
+      </div>
+      <div class="panel-body">
+        <div class="ev-list" id="evList"></div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <div class="panel">
+        <div class="panel-hd"><div class="panel-title">📊 Activity Breakdown</div></div>
+        <div class="panel-body"><div class="cat-rows" id="catRows"></div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-hd"><div class="panel-title">🧬 PE Info</div></div>
+        <div class="panel-body"><div class="pe-grid" id="peGrid"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTIONS + IMPORTS -->
+  <div class="grid2">
+    <div class="panel">
+      <div class="panel-hd">
+        <div class="panel-title">📐 Sections</div>
+        <div class="panel-ct" id="secCt">—</div>
+      </div>
+      <div class="panel-body" style="overflow-x:auto;">
+        <table class="sec-table">
+          <thead><tr><th>Name</th><th>Raw Size</th><th>Entropy</th><th>Flags</th></tr></thead>
+          <tbody id="secBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-hd">
+        <div class="panel-title">📦 Imports</div>
+        <div class="panel-ct" id="impCt">—</div>
+      </div>
+      <div class="panel-body">
+        <div class="imp-list" id="impList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STRINGS -->
+  <div class="panel">
+    <div class="panel-hd">
+      <div class="panel-title">🔤 Extracted Strings</div>
+      <div class="panel-ct" id="strCt">—</div>
+    </div>
+    <div class="panel-body">
+      <input class="str-search" id="strSearch" placeholder="Filter strings..." oninput="filterStrings()">
+      <div class="str-list" id="strList"></div>
+    </div>
+  </div>
+
+  <div class="rescan">
+    <button class="btn-ghost" onclick="resetScan()">↩ ANALYZE ANOTHER FILE</button>
+  </div>
+</div>
+
+</main>
+
+<script>
+const API = '' // same origin
+
+let allStrings = []
+let suspiciousFunctions = new Set()
+
+// ── UPLOAD ────────────────────────────────────────────────────────────────────
+const dz = document.getElementById('dropZone')
+const fi = document.getElementById('fileInput')
+
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over') })
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'))
+dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag-over'); if(e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]) })
+fi.addEventListener('change', () => { if(fi.files[0]) upload(fi.files[0]) })
+
+function show(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'))
+  document.getElementById(id).classList.add('active')
+}
+
+function resetScan() {
+  fi.value = ''
+  document.getElementById('uploadError').style.display = 'none'
+  show('screen-upload')
+}
+
+const LOG_SEQUENCE = [
+  { t:200,  cls:'dim',  txt: msg => `[INIT] Loading ${msg}...` },
+  { t:600,  cls:'ok',   txt: _ => '[PE]   MZ header validated ✓' },
+  { t:1000, cls:'ok',   txt: _ => '[PE]   PE signature found at offset ✓' },
+  { t:1400, cls:'info', txt: _ => '[COFF] Reading machine type, section count, timestamp...' },
+  { t:1800, cls:'ok',   txt: _ => '[OPT]  Optional header parsed (arch, entry point, image base) ✓' },
+  { t:2200, cls:'info', txt: _ => '[SEC]  Walking section table...' },
+  { t:2600, cls:'info', txt: _ => '[ENT]  Calculating per-section entropy...' },
+  { t:3000, cls:'ok',   txt: _ => '[IMP]  Resolving import table RVAs...' },
+  { t:3400, cls:'info', txt: _ => '[STR]  Extracting printable strings (min length 5)...' },
+  { t:3800, cls:'info', txt: _ => '[SIG]  Matching against suspicious import signatures...' },
+  { t:4200, cls:'info', txt: _ => '[SIG]  Scanning string patterns (regex rules)...' },
+  { t:4600, cls:'ok',   txt: _ => '[HASH] SHA256 + MD5 computed ✓' },
+  { t:5000, cls:'info', txt: _ => '[SCOR] Calculating threat score...' },
+  { t:5400, cls:'ok',   txt: _ => '[DONE] Analysis complete — building report...' },
+]
+
+async function upload(file) {
+  const err = document.getElementById('uploadError')
+  err.style.display = 'none'
+
+  show('screen-scanning')
+  document.getElementById('scanTitle').textContent = file.name
+  document.getElementById('scanStage').textContent = 'PARSING PE HEADERS...'
+
+  const log = document.getElementById('scanLog')
+  log.innerHTML = '<span class="log-cursor"></span>'
+  const cursor = log.querySelector('.log-cursor')
+
+  LOG_SEQUENCE.forEach(({ t, cls, txt }) => {
+    setTimeout(() => {
+      const d = document.createElement('div')
+      d.className = 'log-line ' + cls
+      d.textContent = txt(file.name)
+      log.insertBefore(d, cursor)
+      log.scrollTop = log.scrollHeight
+      const pct = Math.round((t / 5400) * 90)
+      document.getElementById('progFill').style.width = pct + '%'
+      document.getElementById('progPct').textContent = pct + '%'
+    }, t)
+  })
+
+  const fd = new FormData()
+  fd.append('file', file)
+
+  let result
+  try {
+    const res = await fetch(`${API}/api/scan`, { method:'POST', body:fd })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Server error')
+    result = data
+  } catch(e) {
+    show('screen-upload')
+    err.textContent = '✗ ' + e.message
+    err.style.display = 'block'
+    return
+  }
+
+  document.getElementById('progFill').style.width = '100%'
+  document.getElementById('progPct').textContent = '100%'
+
+  setTimeout(() => renderResults(result), 400)
+}
+
+// ── RESULTS ───────────────────────────────────────────────────────────────────
+function renderResults(r) {
+  show('screen-results')
+  const { file, pe, analysis, strings } = r
+
+  // Header
+  document.getElementById('resName').textContent = file.name
+  document.getElementById('resSize').textContent = fmtSize(file.size)
+  document.getElementById('resArch').textContent = pe.arch
+  document.getElementById('resSha').textContent = file.sha256
+  document.getElementById('resMd5').textContent = file.md5
+  document.getElementById('resCompiled').textContent = pe.compiledAt ? new Date(pe.compiledAt).toLocaleDateString() : 'Unknown'
+
+  // Score
+  animateScore(analysis.score, analysis.verdict)
+  document.getElementById('scoreBig').textContent = analysis.score
+  document.getElementById('scoreBig').className = 'summary-score ' + analysis.verdict
+  const vb = document.getElementById('verdictBadge')
+  vb.textContent = analysis.verdict.toUpperCase()
+  vb.className = 'verdict ' + analysis.verdict
+
+  // Ind rows
+  const cats = analysis.categories
+  const catColors = {
+    'Credential Access':    'var(--accent)',
+    'Defense Evasion':      'var(--accent)',
+    'Evasion':              'var(--accent)',
+    'Injection':            'var(--warn)',
+    'Persistence':          'var(--warn)',
+    'Privilege Escalation': 'var(--warn)',
+    'Network/C2':           'var(--info)',
+    'Discovery':            'var(--info)',
+    'Misc':                 'var(--text3)',
+  }
+  const indRows = document.getElementById('indRows')
+  indRows.innerHTML = ''
+  for (const [cat, count] of Object.entries(cats).sort((a,b) => b[1]-a[1]).slice(0,6)) {
+    const col = catColors[cat] || 'var(--text2)'
+    indRows.innerHTML += `<div class="ind-row">
+      <div class="ind-dot" style="background:${col}"></div>
+      <div class="ind-label">${cat}</div>
+      <div class="ind-val">${count} hit${count!==1?'s':''}</div>
+    </div>`
+  }
+  if (Object.keys(cats).length === 0) {
+    indRows.innerHTML = '<div class="ind-row"><div class="ind-label" style="color:var(--safe)">No suspicious indicators detected</div></div>'
+  }
+
+  // Findings
+  suspiciousFunctions = new Set(analysis.findings.filter(f => f.source==='import').map(f => f.fn))
+  const evList = document.getElementById('evList')
+  evList.innerHTML = ''
+  document.getElementById('findingCt').textContent = analysis.findings.length + ' findings'
+  if (analysis.findings.length === 0) {
+    evList.innerHTML = '<div style="font-family:var(--mono);font-size:11px;color:var(--safe);padding:8px 0">No suspicious findings detected.</div>'
+  }
+  for (const f of analysis.findings) {
+    const sevClass = { critical:'sc', high:'sh', medium:'sm', low:'sl' }[f.sev] || 'sl'
+    const str = f.string ? `<div class="ev-str">» ${escHtml(f.string.slice(0,100))}</div>` : ''
+    const fn  = f.fn ? `<div class="ev-str">» ${f.dll}!${f.fn}</div>` : ''
+    evList.innerHTML += `<div class="ev-item ${f.sev}">
+      <div class="ev-sev ${sevClass}">${f.sev}</div>
+      <div class="ev-body">
+        <div class="ev-name">${escHtml(f.tag)}</div>
+        <div class="ev-note">${escHtml(f.note)}</div>
+        ${fn}${str}
+      </div>
+    </div>`
+  }
+
+  // Cat bars
+  const maxCat = Math.max(1, ...Object.values(cats))
+  const catRows = document.getElementById('catRows')
+  catRows.innerHTML = ''
+  const catCols = catColors
+  for (const [cat, count] of Object.entries(cats).sort((a,b) => b[1]-a[1])) {
+    const col = catCols[cat] || 'var(--text2)'
+    const id = 'cb_' + Math.random().toString(36).slice(2)
+    catRows.innerHTML += `<div class="cat-row">
+      <div class="cat-hd"><div class="cat-name">${cat}</div><div class="cat-n">${count}</div></div>
+      <div class="cat-track"><div class="cat-fill" id="${id}" style="background:${col}"></div></div>
+    </div>`
+    setTimeout(() => { document.getElementById(id).style.width = (count/maxCat*100)+'%' }, 100)
+  }
+  if (catRows.innerHTML === '') catRows.innerHTML = '<div style="font-family:var(--mono);font-size:10px;color:var(--text3)">No categories</div>'
+
+  // PE Info
+  const peGrid = document.getElementById('peGrid')
+  peGrid.innerHTML = ''
+  const peFields = [
+    ['Architecture', pe.arch],
+    ['Subsystem',    pe.subsystem],
+    ['Type',         pe.isDLL ? 'DLL' : 'EXE'],
+    ['Characteristics', pe.characteristics.join(', ') || '—'],
+    ['Exports',      pe.exportCount],
+    ['Import DLLs',  pe.importedDLLs.length],
+  ]
+  for (const [lbl, val] of peFields) {
+    peGrid.innerHTML += `<div class="pe-row"><div class="pe-label">${lbl}</div><div class="pe-val">${escHtml(String(val||'—'))}</div></div>`
+  }
+
+  // Sections
+  document.getElementById('secCt').textContent = pe.sections.length + ' sections'
+  const secBody = document.getElementById('secBody')
+  secBody.innerHTML = ''
+  for (const sec of pe.sections) {
+    const ent = parseFloat(sec.entropy)
+    const entCol = ent > 7 ? 'var(--accent)' : ent > 6 ? 'var(--warn)' : 'var(--safe)'
+    const flagStr = sec.flags.filter(f => ['CODE','EXECUTE','READ','WRITE'].includes(f)).join(' | ')
+    secBody.innerHTML += `<tr>
+      <td class="${sec.suspicious?'sec-suspicious':''}">${escHtml(sec.name||'(none)')}</td>
+      <td>${fmtSize(sec.rawSize)}</td>
+      <td>
+        <div class="entropy-bar">
+          <div class="entropy-track"><div class="entropy-fill" style="width:${(ent/8)*100}%;background:${entCol}"></div></div>
+          <span style="font-size:10px;color:${entCol}">${sec.entropy}</span>
+        </div>
+      </td>
+      <td style="font-size:9px;color:var(--text3)">${escHtml(flagStr)}</td>
+    </tr>`
+  }
+  if (!pe.sections.length) secBody.innerHTML = '<tr><td colspan="4" style="color:var(--text3);font-size:10px">No sections found</td></tr>'
+
+  // Imports
+  const impList = document.getElementById('impList')
+  impList.innerHTML = ''
+  const dlls = Object.entries(pe.imports || {})
+  document.getElementById('impCt').textContent = dlls.length + ' DLLs'
+  if (!dlls.length) {
+    impList.innerHTML = '<div style="font-family:var(--mono);font-size:10px;color:var(--warn)">No imports found — binary may be packed</div>'
+  }
+  for (const [dll, fns] of dlls) {
+    const fnHtml = fns.map(fn => {
+      const sus = suspiciousFunctions.has(fn)
+      return `<span class="imp-fn ${sus?'suspicious':''}">${escHtml(fn)}</span>`
+    }).join('')
+    impList.innerHTML += `<div class="imp-dll">
+      <div class="imp-dll-name">${escHtml(dll)}</div>
+      <div class="imp-fns">${fnHtml}</div>
+    </div>`
+  }
+
+  // Strings
+  allStrings = strings || []
+  document.getElementById('strCt').textContent = allStrings.length + ' strings'
+  document.getElementById('strSearch').value = ''
+  renderStrings(allStrings, '')
+}
+
+function renderStrings(list, query) {
+  const strList = document.getElementById('strList')
+  strList.innerHTML = ''
+  const show = query ? list.filter(s => s.toLowerCase().includes(query.toLowerCase())) : list
+  const MAX = 300
+  for (const s of show.slice(0, MAX)) {
+    const d = document.createElement('div')
+    d.className = 'str-row'
+    if (query) {
+      const re = new RegExp('(' + query.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + ')', 'gi')
+      d.innerHTML = escHtml(s).replace(re, '<mark>$1</mark>')
+    } else {
+      d.textContent = s
+    }
+    strList.appendChild(d)
+  }
+  if (show.length > MAX) {
+    const d = document.createElement('div')
+    d.style.cssText = 'font-family:var(--mono);font-size:9px;color:var(--text3);padding:4px 6px;'
+    d.textContent = `... ${show.length - MAX} more`
+    strList.appendChild(d)
+  }
+}
+
+function filterStrings() {
+  renderStrings(allStrings, document.getElementById('strSearch').value)
+}
+
+function animateScore(target, verdict) {
+  const arc = document.getElementById('scoreArc')
+  const numEl = document.getElementById('scoreNum')
+  const colors = { malicious:'#ff4b2b', suspicious:'#f0c030', clean:'#00e5a0' }
+  const col = colors[verdict] || '#3d9eff'
+  arc.setAttribute('stroke', col)
+  const circ = 264
+  let cur = 0
+  const step = target / 50
+  const t = setInterval(() => {
+    cur = Math.min(cur + step, target)
+    arc.style.strokeDashoffset = circ - (cur/100)*circ
+    numEl.textContent = Math.round(cur)
+    numEl.style.color = col
+    if (cur >= target) clearInterval(t)
+  }, 16)
+}
+
+function fmtSize(b) {
+  if (!b) return '0 B'
+  if (b < 1024) return b + ' B'
+  if (b < 1024*1024) return (b/1024).toFixed(1) + ' KB'
+  return (b/(1024*1024)).toFixed(2) + ' MB'
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+}
+</script>
+</body>
+</html>
